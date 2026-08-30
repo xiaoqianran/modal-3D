@@ -11,11 +11,13 @@ from .png import alpha_range as _png_rgba_alpha_range
 # Windows can be serialized into the Modal class definition and fail to unpickle
 # inside Linux containers.
 ARTIFACT_ROOT = "/artifacts"
-# Clients upload finished canonical inputs here. Modal never preprocesses.
+ARTIFACT_VOLUME = "modal-gen-artifacts"
+# Model workers consume only canonical inputs here. Shared raw sources are prepared by
+# RemBgWorker before a model worker is spawned.
 CLIENT_INPUT_NAMESPACE = "client-inputs"
 # Historical capability field name: this is now the direct worker deployment
 # revision, not a CPU adapter revision. Keep the value/field stable for v3 clients.
-WORKER_ADAPTER_REVISION = "modal-3d.worker-adapter.v4"
+WORKER_ADAPTER_REVISION = "modal-3d.worker-adapter.v5"
 CANONICAL_INPUT = {
     "role": "canonical_rgba",
     "mime": "image/png",
@@ -69,9 +71,12 @@ def validate_canonical_input(path: Path, input_path: str | None = None) -> dict:
     """Validate canonical PNG bytes and, for content-addressed inputs, their filename hash."""
     metadata = validate_canonical_png(path)
     candidate = Path(input_path).stem if input_path is not None else path.stem
-    if len(candidate) == 64 and all(char in "0123456789abcdef" for char in candidate.lower()):
-        if metadata["sha256"] != candidate.lower():
-            raise ValueError("canonical input SHA256 does not match its content-addressed filename")
+    if (
+        len(candidate) == 64
+        and all(char in "0123456789abcdef" for char in candidate.lower())
+        and metadata["sha256"] != candidate.lower()
+    ):
+        raise ValueError("canonical input SHA256 does not match its content-addressed filename")
     return metadata
 
 
@@ -187,7 +192,6 @@ def read_canonical_input(
     return path.read_bytes()
 
 
-
 def pinned_hf_snapshot(
     cache_dir: str | Path,
     repo_id: str,
@@ -207,12 +211,7 @@ def pinned_hf_snapshot(
     if not revision or any(ch in revision for ch in forbidden):
         raise ValueError("revision must be a simple cache revision")
 
-    snapshot = (
-        Path(cache_dir)
-        / f"models--{repo_id.replace('/', '--')}"
-        / "snapshots"
-        / revision
-    )
+    snapshot = Path(cache_dir) / f"models--{repo_id.replace('/', '--')}" / "snapshots" / revision
     if not snapshot.is_dir():
         raise FileNotFoundError(f"Hugging Face snapshot missing: {snapshot}")
     missing = [name for name in required_files if not (snapshot / name).is_file()]

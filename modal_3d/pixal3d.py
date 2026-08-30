@@ -4,8 +4,8 @@ import io
 import os
 import shutil
 import subprocess
-import threading
 import tempfile
+import threading
 import time
 import urllib.request
 import uuid
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import modal
 
-from .common import pinned_hf_snapshot, run_generation_job, worker_capability
+from .common import ARTIFACT_VOLUME, pinned_hf_snapshot, run_generation_job, worker_capability
 
 APP_NAME = "modal-3d-pixal3d"
 GPU = "L40S"
@@ -32,7 +32,7 @@ WHEELS_URL = f"https://github.com/xiaoqianran/modal-build/releases/download/{TAG
 
 app = modal.App(APP_NAME)
 weights = modal.Volume.from_name("modal-3d-pixal3d-weights", create_if_missing=True)
-artifacts = modal.Volume.from_name("modal-3d-artifacts", create_if_missing=True)
+artifacts = modal.Volume.from_name(ARTIFACT_VOLUME, create_if_missing=True)
 
 CAPABILITY = worker_capability(
     "pixal3d",
@@ -268,9 +268,7 @@ class Model:
         self.pipe.image_cond_model_shape_1024 = build_image_cond_model(
             image_cond_configs["shape_1024"]
         )
-        self.pipe.image_cond_model_tex_1024 = build_image_cond_model(
-            image_cond_configs["tex_1024"]
-        )
+        self.pipe.image_cond_model_tex_1024 = build_image_cond_model(image_cond_configs["tex_1024"])
         self.pipe.low_vram = False
         self.pipe.cuda()
         for name in (

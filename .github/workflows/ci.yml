@@ -44,3 +44,15 @@ jobs:
 
       - name: Run unit tests
         run: uv run python -m unittest discover -s tests -v
+
+      - name: Install local Client dependencies (Python 3.12)
+        if: matrix.python-version == '3.12'
+        run: uv sync --extra client --group dev --frozen
+
+      - name: Validate merged Client adapter (Python 3.12)
+        if: matrix.python-version == '3.12'
+        run: |
+          uv run ruff check modal_3d/client client_tests
+          uv run python -m compileall -q modal_3d/client client_tests
+          uv run pytest -q client_tests
+          uv run python -c "from modal_3d.client.server import main; assert callable(main)"

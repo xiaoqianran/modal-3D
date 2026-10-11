@@ -14,12 +14,18 @@ failed download stops deployment.
 
 **Live benchmark:** https://xiaoqianran.github.io/modal-3D/
 
-Current 3D workers:
+Current 3D generation workers:
 
 - FastSAM3D++
 - Hunyuan2.1++
 - Pixal3D
 - Hermite-TRELLIS2++
+
+Asset-processing worker:
+
+- `modal-3d-mesh` (CPU): inspect, cleanup/repair, decimation, QuadriFlow
+  retopology, xatlas UV unwrap and texture rebake. These remain separate
+  operations while sharing one Blender/xatlas runtime.
 
 Optional preprocessing worker:
 
@@ -31,7 +37,7 @@ Optional preprocessing worker:
 Two input paths share the same GPU workers:
 
 ```text
-Direct modal-3D-client upload
+Direct modal_3d.client upload
 PNG / JPEG / WebP
   -> local validation + target-worker warmup
   -> [opaque/no mask only] T4 RemBgWorker.process -> mask
@@ -69,12 +75,54 @@ The **internal model-worker input contract** is:
 The public/source contract is broader: `PNG / JPEG / WebP` up to the configured
 source-size limit. Opaque sources are canonicalized before they reach a model worker.
 
-Each 3D worker exposes only the direct generation method:
+## Generic 3D operation contract
+
+The existing modal-3d.capabilities.v3 generation contract remains stable for
+installed clients. Image-to-3D workers still expose the same canonical RGBA
+input, geometry / textured output aliases, and Model.generate_job entrypoint.
+
+New asset-processing capabilities use the additive modal-3d.operations.v1
+metadata carried by the same capability document:
+
+    capability
+      operation: image_to_3d | segment_parts | retopology | uv | texture | rig | pose | ...
+      inputs:
+        - name: asset
+          kind: mesh | textured_mesh | part_set | rigged_mesh | ...
+      outputs:
+        - name: parts
+          kind: part_set | retopologized_mesh | uv_mesh | rigged_mesh | ...
+      entrypoint:
+        kind: class_method
+        class_name: Model
+        method_name: run_job
+
+Generic operation submission uses named artifact-relative inputs, for example
+{"asset": "fastsam3d-plus-plus/<id>.glb"} or multiple inputs such as
+{"asset": "assets/<id>.glb", "mask": "masks/<id>.png"}. Every path is confined
+below /artifacts; the legacy image generation route remains additionally
+confined to client-inputs/.
+
+This split is deliberate: generation models remain backward compatible while
+P3-SAM, X-Part, retopology, UV, texture, rigging and pose workers can be added
+without pretending that they consume a 1024x1024 image.
+
+Each image-to-3D generation worker exposes only the direct generation method:
 
 ```python
 cls = modal.Cls.from_name("modal-3d-pixal3d", "Model")
 call = cls().generate_job.spawn("client-inputs/<sha256>.png", options)
 # persist call.object_id; restore with modal.FunctionCall.from_id(...)
+```
+
+The CPU asset-processing worker exposes `Model.run_job` instead:
+
+```python
+cls = modal.Cls.from_name("modal-3d-mesh", "Model")
+call = cls().run_job.spawn(
+    {"operation": "retopology", "inputs": {"asset": artifact_descriptor}},
+    {"target_faces": 4000},
+)
 ```
 
 The T4 worker exposes both the legacy byte/mask method and the shared-volume handoff:
@@ -117,6 +165,7 @@ Deploy modules directly; there is no registration step.
 Windows PowerShell:
 
 ```powershell
+./scripts/deploy-worker.ps1 modal_3d/mesh_worker.py
 ./scripts/deploy-worker.ps1 modal_3d/rembg_worker.py
 ./scripts/deploy-worker.ps1 modal_3d/fastsam3d_plus_plus.py
 ./scripts/deploy-worker.ps1 modal_3d/hunyuan2_1_plus_plus.py
@@ -127,12 +176,23 @@ Windows PowerShell:
 Linux/WSL:
 
 ```bash
+bash ./scripts/deploy-worker.sh modal_3d/mesh_worker.py
 bash ./scripts/deploy-worker.sh modal_3d/rembg_worker.py
 bash ./scripts/deploy-worker.sh modal_3d/fastsam3d_plus_plus.py
 bash ./scripts/deploy-worker.sh modal_3d/hunyuan2_1_plus_plus.py
 bash ./scripts/deploy-worker.sh modal_3d/hermit_trellis2_plus_plus.py
 bash ./scripts/deploy-worker.sh modal_3d/pixal3d.py
 ```
+
+## 本地测试
+
+`pytest` 已纳入默认安装的 `dev` 依赖组，不需要临时添加 `--with pytest`。
+
+```bash
+uv run --locked --default-index https://pypi.org/simple --no-config pytest -q
+```
+
+仓库锁文件使用官方 PyPI 地址；更新锁文件时也应显式指定官方索引，避免提交本机镜像地址。
 
 ## 验收记录
 
@@ -141,10 +201,16 @@ bash ./scripts/deploy-worker.sh modal_3d/pixal3d.py
 真实 RGBA PNG → GLB 成功，GLB v2、1,520,464 bytes、37,990 vertices、75,968 faces，
 L40S 推理约 5.8 秒，完整远端调用约 42 秒。
 
-直接调用 `Model.generate_job` 时仍必须提供 canonical RGBA；通过 `modal-3D-client` 或 `modal-gen` 的 source contract 可以提交 PNG/JPEG/WebP，opaque 图片会先经过 conditioning。
+直接调用 `Model.generate_job` 时仍必须提供 canonical RGBA；通过 `modal_3d.client` 或 `modal-gen` 的 source contract 可以提交 PNG/JPEG/WebP，opaque 图片会先经过 conditioning。
 
-Generation/task/artifact HTTP APIs live in the sibling `modal-3D-client` package, not in this
-provider package. Historical benchmark evidence is preserved under
+Generation/task/artifact HTTP APIs live in the optional `modal_3d.client` subpackage,
+not in the GPU workers. Historical benchmark evidence is preserved under
 `benchmarks/`; retired experiments live under `archive/`.
+
+Install the local adapter with `pip install "modal-3d[client]"` or
+`uv sync --extra client --group dev`. Its Provider SPI entry point is
+`modal_3d.client.provider:create_provider` and its optional local API command is
+`modal-3d-agent`. The pre-existing `MODAL_3D_CLIENT_DATA_DIR`, SQLite jobs,
+artifact cache, and remote Modal identities are unchanged by the relocation.
 
 See `docs/ARCHITECTURE.md` for the production boundaries.

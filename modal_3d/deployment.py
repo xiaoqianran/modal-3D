@@ -33,6 +33,95 @@ def deployment_manifest() -> dict[str, object]:
         "provider": "modal-3d",
         "targets": [
             {
+                "app": "modal-3d-mesh",
+                "module": "modal_3d.mesh_worker",
+                "kind": "worker",
+                "revision": revision,
+                "weightless": True,
+                "weights": [],
+            },
+            {
+                "app": "modal-3d-p3sam",
+                "secrets": ["huggingface"],
+                "module": "modal_3d.p3sam_worker",
+                "kind": "worker",
+                "models": ["segment_parts"],
+                "revision": revision,
+                "weights": _weights(
+                    "modal-3d-p3sam-weights",
+                    ["p3sam/p3sam.safetensors", "sonata/sonata.pth"],
+                ),
+            },
+            {
+                "app": "modal-3d-xpart",
+                "secrets": ["huggingface"],
+                "module": "modal_3d.xpart_worker",
+                "kind": "worker",
+                "models": ["complete_parts"],
+                "revision": revision,
+                "weights": _weights(
+                    "modal-3d-xpart-weights",
+                    [
+                        "tencent/Hunyuan3D-Part/model/model.safetensors",
+                        "tencent/Hunyuan3D-Part/conditioner/conditioner.safetensors",
+                        "tencent/Hunyuan3D-Part/shapevae/shapevae.safetensors",
+                        "tencent/Hunyuan3D-Part/scheduler/config.json",
+                    ],
+                ),
+            },
+            {
+                "app": "modal-3d-hunyuan-paint",
+                "module": "modal_3d.hunyuan_paint_worker",
+                "kind": "worker",
+                "models": ["texture_generate"],
+                "revision": revision,
+                "weights": _weights(
+                    "modal-3d-hunyuan-paint-weights",
+                    [
+                        "Hunyuan3D-2.1/hunyuan3d-paintpbr-v2-1/model_index.json",
+                        "RealESRGAN_x4plus.pth",
+                    ],
+                ),
+            },
+            {
+                "app": "modal-3d-hunyuan2mv",
+                "module": "modal_3d.hunyuan2mv_worker",
+                "kind": "worker",
+                "models": ["multiview_to_3d"],
+                "revision": revision,
+                "weights": _weights(
+                    "modal-3d-hunyuan2mv-weights",
+                    [
+                        "Hunyuan3D-2mv/hunyuan3d-dit-v2-mv/config.yaml",
+                        "Hunyuan3D-2mv/hunyuan3d-dit-v2-mv/model.fp16.safetensors",
+                    ],
+                ),
+            },
+            {
+                "app": "modal-3d-tokenrig",
+                "module": "modal_3d.tokenrig_worker",
+                "kind": "worker",
+                "models": ["rig"],
+                "revision": revision,
+                "weights": _weights(
+                    "modal-3d-tokenrig-weights",
+                    [
+                        "tokenrig/experiments/skin_vae_2_10_32768/last.ckpt",
+                        "tokenrig/experiments/articulation_xl_quantization_256_token_4/grpo_1400.ckpt",
+                        "tokenrig/models/Qwen3-0.6B/config.json",
+                    ],
+                ),
+            },
+            {
+                "app": "modal-3d-pose",
+                "module": "modal_3d.pose_worker",
+                "kind": "worker",
+                "models": ["pose"],
+                "revision": revision,
+                "weightless": True,
+                "weights": [],
+            },
+            {
                 "app": "modal-3d-rembg",
                 "module": "modal_3d.rembg_worker",
                 "kind": "preprocess",
